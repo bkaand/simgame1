@@ -10,6 +10,8 @@ class TextInterface:
     def __init__(self):
         """Initialize the text interface."""
         self.width = 80
+        self.running = True
+        self.game_manager = None
     
     def clear_screen(self):
         """Clear the terminal screen."""
@@ -45,46 +47,26 @@ class TextInterface:
             The index of the chosen option.
         """
         self.display_message(f"\n{title}")
-        for i, option in enumerate(options):
-            self.display_message(f"{i+1}. {option}")
+        for i, option in enumerate(options, 1):
+            self.display_message(f"{i}. {option}")
         
         while True:
             try:
                 choice = int(self.get_input("\nEnter your choice (number): "))
                 if 1 <= choice <= len(options):
                     return choice - 1
-                else:
-                    self.display_message("Invalid choice. Please try again.")
+                self.display_message(f"Invalid choice. Please enter 1-{len(options)}.")
             except ValueError:
-                self.display_message("Please enter a number.")
+                self.display_message("Invalid input. Please enter a number.")
     
     def display_character_sheet(self, character):
-        """Display a character sheet.
+        """Display detailed character information.
         
         Args:
-            character: The character to display.
+            character: The character to display information for.
         """
-        self.clear_screen()
-        self.display_message("=" * self.width)
-        self.display_message(f"Character Sheet: {character.name}".center(self.width))
-        self.display_message("=" * self.width)
-        self.display_message(f"Role: {character.role.capitalize()}")
-        self.display_message(f"Age: {character.age}")
-        self.display_message(f"Gender: {character.gender.capitalize()}")
-        self.display_message(f"Health: {character.health}/100")
-        self.display_message(f"Wealth: {character.wealth} coins")
-        
-        # Display attributes
-        self.display_message("\nAttributes:")
-        for attr, value in character.attributes.items():
-            self.display_message(f"  {attr.capitalize()}: {value}")
-        
-        # Display skills
-        self.display_message("\nSkills:")
-        for skill, value in character.skills.items():
-            self.display_message(f"  {skill.capitalize()}: {value}")
-        
-        self.get_input("\nPress Enter to continue...")
+        self.display_message("\n=== Character Sheet ===")
+        character.display_details(self)
     
     def display_event(self, event_title, event_description):
         """Display an event to the user.
@@ -93,12 +75,13 @@ class TextInterface:
             event_title: The title of the event.
             event_description: The description of the event.
         """
-        self.clear_screen()
-        self.display_message("!" * self.width)
-        self.display_message(f"EVENT: {event_title}".center(self.width))
-        self.display_message("!" * self.width)
-        self.display_message(f"\n{event_description}\n")
-        self.get_input("Press Enter to continue...")
+        border = "!" * self.width
+        self.display_message(border)
+        self.display_message(f"{event_title:^{self.width}}")
+        self.display_message(border)
+        self.display_message("")
+        self.display_message(event_description)
+        self.display_message("")
     
     def display_notification(self, message):
         """Display a notification to the user.
@@ -106,5 +89,5 @@ class TextInterface:
         Args:
             message: The notification message.
         """
-        self.display_message(f"\n>>> {message}")
+        self.display_message(f"\n>>> {message} <<<\n")
         time.sleep(1.5)  # Pause briefly to let the user read the notification 

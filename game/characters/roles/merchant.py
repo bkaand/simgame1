@@ -18,14 +18,21 @@ class Merchant(Character):
         super().__init__(name, gender, "merchant", birth_year)
         
         # Merchants start with moderate wealth
-        self.wealth = random.randint(100, 500)
+        self.wealth = random.randint(100, 300)
         
         # Merchant-specific properties
         self.inventory = {}  # Type -> quantity
-        self.trade_reputation = random.randint(30, 70)  # Reputation among merchants (0-100)
+        self.trade_routes = []
+        self.shop_level = 1
+        self.employees = 0
+        self.last_trade_result = None
         
-        # Initialize with some random goods
-        self._initialize_inventory()
+        # Initialize starting inventory
+        self.inventory = {
+            "food": random.randint(5, 15),
+            "cloth": random.randint(3, 8),
+            "tools": random.randint(2, 5)
+        }
         
         # Adjust skills for role
         self._adjust_skills_for_role()
@@ -67,7 +74,7 @@ class Merchant(Character):
         actions = super().get_actions()
         
         # Add merchant-specific actions
-        merchant_actions = ["Trade Goods"]
+        merchant_actions = ["Trade Goods", "Hire Employee", "Upgrade Shop"]
         
         actions.extend(merchant_actions)
         return actions
@@ -80,233 +87,120 @@ class Merchant(Character):
             game_manager: The game manager.
         """
         if action == "Trade Goods":
-            self._trade_goods(game_manager)
+            self._trade(game_manager)
+        elif action == "Hire Employee":
+            self._hire_employee(game_manager)
+        elif action == "Upgrade Shop":
+            self._upgrade_shop(game_manager)
         else:
             # Use base class implementation for common actions
             super().perform_action(action, game_manager)
     
-    def _trade_goods(self, game_manager):
-        """Trade goods at a market.
+    def _trade(self, game_manager):
+        """Conduct trade with consideration for reputation effects."""
+        # Get reputation modifiers
+        merchant_mod = self.reputation.get_reputation_effects("merchants").get("buy_discount", 1.0)
+        noble_mod = self.reputation.get_reputation_effects("nobility").get("trade_profit", 1.0)
         
-        Args:
-            game_manager: The game manager.
-        """
-        interface = game_manager.interface
+        base_success_chance = 0.6 + (self.skills["trade"] / 200)  # 60-85% base chance
+        success_chance = min(0.95, base_success_chance * merchant_mod)
         
-        interface.display_message("=== Trade Goods ===")
-        
-        # Choose whether to buy or sell
-        choice = interface.display_menu("Would you like to buy or sell goods?", ["Buy", "Sell"])
-        
-        if choice == 0:  # Buy
-            self._buy_goods(game_manager)
-        else:  # Sell
-            self._sell_goods(game_manager)
-    
-    def _buy_goods(self, game_manager):
-        """Buy goods at the market.
-        
-        Args:
-            game_manager: The game manager.
-        """
-        interface = game_manager.interface
-        
-        interface.display_message("=== Buy Goods ===")
-        
-        # Available goods to buy
-        available_goods = {
-            "cloth": {"base_price": 10, "quantity": random.randint(10, 30)},
-            "spices": {"base_price": 25, "quantity": random.randint(5, 15)},
-            "grain": {"base_price": 5, "quantity": random.randint(20, 50)},
-            "tools": {"base_price": 15, "quantity": random.randint(8, 20)},
-            "leather": {"base_price": 12, "quantity": random.randint(10, 25)},
-            "pottery": {"base_price": 8, "quantity": random.randint(15, 35)},
-            "wine": {"base_price": 20, "quantity": random.randint(5, 20)}
-        }
-        
-        # Display available goods
-        interface.display_message("Available goods:")
-        good_options = []
-        for good, details in available_goods.items():
-            # Apply random price fluctuation
-            price_fluctuation = random.uniform(0.8, 1.2)
-            price = int(details["base_price"] * price_fluctuation)
+        if random.random() < success_chance:
+            # Successful trade
+            base_profit = random.randint(20, 50) * self.shop_level
+            profit = int(base_profit * noble_mod)
             
-            # Apply trade skill discount
-            trade_discount = 1.0 - (self.skills["trade"] / 200)  # 0-50% discount based on trade skill
-            final_price = max(1, int(price * trade_discount))
+            self.wealth += profit
+            self.skills["trade"] = min(100, self.skills["trade"] + random.randint(1, 3))
             
-            # Update price in available_goods
-            available_goods[good]["price"] = final_price
+            # Improve reputation with merchants and nobility
+            self.reputation.adjust_reputation("merchants", random.randint(1, 3))
+            if profit > 30:
+                self.reputation.adjust_reputation("nobility", 1)
             
-            good_desc = f"{good.capitalize()} - {details['quantity']} available at {final_price} coins each"
-            good_options.append(good_desc)
-            interface.display_message(f"  {good_desc}")
-        
-        # Add option to cancel
-        good_options.append("Cancel purchase")
-        
-        # Let player choose a good to buy
-        choice = interface.display_menu("What would you like to buy?", good_options)
-        
-        if choice == len(good_options) - 1:  # Cancel option
-            interface.display_message("You decide not to buy anything.")
-            interface.get_input("\nPress Enter to continue...")
-            return
-        
-        # Get the chosen good
-        chosen_good = list(available_goods.keys())[choice]
-        good_details = available_goods[chosen_good]
-        
-        # Ask for quantity
-        max_affordable = min(good_details["quantity"], self.wealth // good_details["price"])
-        if max_affordable <= 0:
-            interface.display_message(f"You cannot afford any {chosen_good} at the current price.")
-            interface.get_input("\nPress Enter to continue...")
-            return
-        
-        quantity_options = [str(i+1) for i in range(max_affordable)]
-        quantity_choice = interface.display_menu(f"How many {chosen_good} would you like to buy?", quantity_options)
-        quantity = quantity_choice + 1  # Convert to 1-based
-        
-        # Calculate total cost
-        total_cost = quantity * good_details["price"]
-        
-        # Confirm purchase
-        confirm = interface.display_menu(f"Purchase {quantity} {chosen_good} for {total_cost} coins?", ["Yes", "No"])
-        if confirm == 1:  # No
-            interface.display_message("Purchase canceled.")
-            interface.get_input("\nPress Enter to continue...")
-            return
-        
-        # Complete purchase
-        self.wealth -= total_cost
-        
-        # Add to inventory
-        if chosen_good in self.inventory:
-            self.inventory[chosen_good] += quantity
+            self.last_trade_result = f"Trade successful! Earned {profit} coins."
+            return True
         else:
-            self.inventory[chosen_good] = quantity
-        
-        # Display results
-        interface.display_message(f"You purchased {quantity} {chosen_good} for {total_cost} coins.")
-        interface.display_message(f"Current wealth: {self.wealth} coins")
-        
-        # Small trade skill improvement
-        skill_gain = random.randint(1, 2)
-        self.skills["trade"] = min(100, self.skills["trade"] + skill_gain)
-        interface.display_message(f"Your trade skill improved by {skill_gain} points.")
-        
-        interface.get_input("\nPress Enter to continue...")
+            # Failed trade
+            loss = random.randint(10, 30) * self.shop_level
+            self.wealth = max(0, self.wealth - loss)
+            
+            # Small reputation loss
+            self.reputation.adjust_reputation("merchants", -1)
+            
+            self.last_trade_result = f"Trade failed. Lost {loss} coins."
+            return False
     
-    def _sell_goods(self, game_manager):
-        """Sell goods at the market.
+    def _hire_employee(self, game_manager):
+        """Hire an employee with reputation effects."""
+        cost = 50 * (self.employees + 1)
         
-        Args:
-            game_manager: The game manager.
-        """
-        interface = game_manager.interface
+        if self.wealth >= cost:
+            # Reputation affects employee quality
+            peasant_mod = self.reputation.get_reputation_effects("peasants").get("worker_quality", 1.0)
+            merchant_mod = self.reputation.get_reputation_effects("merchants").get("hire_discount", 1.0)
+            
+            # Adjust cost based on merchant reputation
+            final_cost = int(cost * merchant_mod)
+            
+            self.wealth -= final_cost
+            self.employees += 1
+            
+            # Employee quality affects skill gain
+            skill_gain = int(random.randint(2, 5) * peasant_mod)
+            self.skills["trade"] = min(100, self.skills["trade"] + skill_gain)
+            
+            # Improve reputation with peasants
+            self.reputation.adjust_reputation("peasants", 2)
+            
+            return f"Hired employee for {final_cost} coins. Trade skill increased by {skill_gain}."
+        return "Not enough money to hire an employee."
+    
+    def _upgrade_shop(self, game_manager):
+        """Upgrade shop with reputation effects."""
+        base_cost = 200 * self.shop_level
         
-        interface.display_message("=== Sell Goods ===")
+        # Reputation affects upgrade costs
+        merchant_mod = self.reputation.get_reputation_effects("merchants").get("upgrade_discount", 1.0)
+        cost = int(base_cost * merchant_mod)
         
-        # Check if player has goods to sell
-        if not self.inventory:
-            interface.display_message("You don't have any goods to sell.")
-            interface.get_input("\nPress Enter to continue...")
-            return
-        
-        # Display inventory
-        interface.display_message("Your inventory:")
-        good_options = []
-        for good, quantity in self.inventory.items():
-            good_desc = f"{good.capitalize()} - {quantity} in stock"
-            good_options.append(good_desc)
-            interface.display_message(f"  {good_desc}")
-        
-        # Add option to cancel
-        good_options.append("Cancel sale")
-        
-        # Let player choose a good to sell
-        choice = interface.display_menu("What would you like to sell?", good_options)
-        
-        if choice == len(good_options) - 1:  # Cancel option
-            interface.display_message("You decide not to sell anything.")
-            interface.get_input("\nPress Enter to continue...")
-            return
-        
-        # Get the chosen good
-        chosen_good = list(self.inventory.keys())[choice]
-        quantity_in_stock = self.inventory[chosen_good]
-        
-        # Base prices for goods
-        base_prices = {
-            "cloth": 10,
-            "spices": 25,
-            "grain": 5,
-            "tools": 15,
-            "leather": 12,
-            "pottery": 8,
-            "wine": 20
-        }
-        
-        # Calculate selling price with random fluctuation and trade skill bonus
-        base_price = base_prices.get(chosen_good, 10)
-        price_fluctuation = random.uniform(0.8, 1.2)
-        trade_bonus = 1.0 + (self.skills["trade"] / 200)  # 0-50% bonus based on trade skill
-        selling_price = max(1, int(base_price * price_fluctuation * trade_bonus))
-        
-        # Ask for quantity
-        quantity_options = [str(i+1) for i in range(quantity_in_stock)]
-        quantity_choice = interface.display_menu(f"How many {chosen_good} would you like to sell at {selling_price} coins each?", quantity_options)
-        quantity = quantity_choice + 1  # Convert to 1-based
-        
-        # Calculate total earnings
-        total_earnings = quantity * selling_price
-        
-        # Confirm sale
-        confirm = interface.display_menu(f"Sell {quantity} {chosen_good} for {total_earnings} coins?", ["Yes", "No"])
-        if confirm == 1:  # No
-            interface.display_message("Sale canceled.")
-            interface.get_input("\nPress Enter to continue...")
-            return
-        
-        # Complete sale
-        self.wealth += total_earnings
-        
-        # Remove from inventory
-        self.inventory[chosen_good] -= quantity
-        if self.inventory[chosen_good] <= 0:
-            del self.inventory[chosen_good]
-        
-        # Display results
-        interface.display_message(f"You sold {quantity} {chosen_good} for {total_earnings} coins.")
-        interface.display_message(f"Current wealth: {self.wealth} coins")
-        
-        # Trade skill improvement
-        skill_gain = random.randint(1, 2)
-        self.skills["trade"] = min(100, self.skills["trade"] + skill_gain)
-        interface.display_message(f"Your trade skill improved by {skill_gain} points.")
-        
-        # Trade reputation improvement
-        rep_gain = random.randint(1, 2)
-        self.trade_reputation = min(100, self.trade_reputation + rep_gain)
-        interface.display_message(f"Your trade reputation improved by {rep_gain} points.")
-        
-        interface.get_input("\nPress Enter to continue...")
+        if self.wealth >= cost:
+            self.wealth -= cost
+            self.shop_level += 1
+            
+            # Significant reputation gain with merchants
+            self.reputation.adjust_reputation("merchants", 5)
+            
+            # Small reputation gain with nobility due to improved establishment
+            self.reputation.adjust_reputation("nobility", 2)
+            
+            return f"Shop upgraded to level {self.shop_level}!"
+        return "Not enough money to upgrade shop."
     
     def display_status(self, interface):
-        """Display the character's status.
+        """Display merchant status with reputation effects."""
+        super().display_status(interface)
         
-        Args:
-            interface: The user interface.
-        """
-        interface.display_message(f"Trade Skill: {self.skills['trade']}/100")
-        interface.display_message(f"Trade Reputation: {self.trade_reputation}/100")
+        interface.display_message(f"\nShop Level: {self.shop_level}")
+        interface.display_message(f"Employees: {self.employees}")
         
-        # Display inventory
-        if self.inventory:
-            interface.display_message("\nInventory:")
-            for good, quantity in self.inventory.items():
-                interface.display_message(f"  {good.capitalize()}: {quantity}")
-        else:
-            interface.display_message("\nInventory: Empty") 
+        if self.last_trade_result:
+            interface.display_message(f"\nLast Trade Result: {self.last_trade_result}")
+        
+        interface.display_message("\nInventory:")
+        for item, amount in self.inventory.items():
+            interface.display_message(f"{item.capitalize()}: {amount}")
+        
+        # Display relevant reputation bonuses
+        merchant_effects = self.reputation.get_reputation_effects("merchants")
+        noble_effects = self.reputation.get_reputation_effects("nobility")
+        
+        trade_bonus = (merchant_effects.get("buy_discount", 1.0) - 1) * 100
+        profit_bonus = (noble_effects.get("trade_profit", 1.0) - 1) * 100
+        
+        if trade_bonus != 0 or profit_bonus != 0:
+            interface.display_message("\nTrade Bonuses:")
+            if trade_bonus != 0:
+                interface.display_message(f"Purchase Discount: {trade_bonus:+.1f}%")
+            if profit_bonus != 0:
+                interface.display_message(f"Profit Bonus: {profit_bonus:+.1f}%") 

@@ -3,6 +3,9 @@ Character - Base class for all character types in the game
 """
 import random
 from datetime import datetime
+from game.characters.reputation import ReputationManager
+from game.mechanics.outcome_manager import OutcomeManager
+from game.mechanics.historical_constraints import HistoricalConstraints
 
 class Character:
     """Base class for all characters in the game."""
@@ -18,6 +21,16 @@ class Character:
         """
         self.name = name
         self.gender = gender.lower()
+        
+        # Initialize historical constraints
+        self.historical_constraints = HistoricalConstraints()
+        
+        # Validate role based on gender
+        allowed_roles = self.historical_constraints.get_allowed_roles(gender)
+        if role not in allowed_roles:
+            # Default to an allowed role if the chosen one isn't permitted
+            role = allowed_roles[0]
+        
         self.role = role.lower()
         self.birth_year = birth_year
         self.age = 0  # Will be calculated based on game year
@@ -26,6 +39,14 @@ class Character:
         self.spouse = None
         self.children = []
         self.relationships = {}  # Person -> Relationship
+        self.traits = []  # List of character traits
+        self.happiness = 50  # Base happiness level (0-100)
+        
+        # Initialize reputation system
+        self.reputation = ReputationManager()
+        
+        # Initialize outcome manager
+        self.outcome_manager = OutcomeManager()
         
         # Base attributes (1-100)
         self.attributes = {
@@ -43,16 +64,76 @@ class Character:
             'stewardship': random.randint(10, 50),
             'trade': random.randint(10, 50),
             'farming': random.randint(10, 50),
-            'crafting': random.randint(10, 50)
+            'crafting': random.randint(10, 50),
+            'medicine': random.randint(10, 50)
         }
         
         # Adjust skills based on role
         self._adjust_skills_for_role()
+        
+        # Adjust starting reputation based on role
+        self._adjust_starting_reputation()
+        
+        # Initialize random traits
+        self._initialize_traits()
     
     def _adjust_skills_for_role(self):
         """Adjust skills based on character role."""
-        # This will be overridden by subclasses
-        pass
+        if self.role == "merchant":
+            self.skills["trade"] += 20
+            self.skills["diplomacy"] += 10
+        elif self.role == "knight":
+            self.skills["combat"] += 20
+            self.skills["diplomacy"] += 5
+        elif self.role == "craftsman":
+            self.skills["crafting"] += 20
+            self.skills["trade"] += 10
+        elif self.role == "farmer":
+            self.skills["farming"] += 20
+            self.skills["crafting"] += 5
+        elif self.role == "priest":
+            self.skills["diplomacy"] += 15
+            self.skills["medicine"] += 10
+        elif self.role == "noble":
+            self.skills["diplomacy"] += 15
+            self.skills["stewardship"] += 10
+    
+    def _adjust_starting_reputation(self):
+        """Adjust starting reputation based on character role."""
+        if self.role == "noble" or self.role == "king":
+            self.reputation.adjust_reputation("nobility", 20)
+            self.reputation.adjust_reputation("peasants", -10)
+        
+        elif self.role == "priest":
+            self.reputation.adjust_reputation("clergy", 20)
+            self.reputation.adjust_reputation("criminals", -10)
+        
+        elif self.role == "merchant":
+            self.reputation.adjust_reputation("merchants", 20)
+        
+        elif self.role == "knight":
+            self.reputation.adjust_reputation("military", 20)
+            self.reputation.adjust_reputation("nobility", 10)
+        
+        elif self.role == "farmer":
+            self.reputation.adjust_reputation("peasants", 20)
+        
+        elif self.role == "craftsman":
+            self.reputation.adjust_reputation("merchants", 10)
+            self.reputation.adjust_reputation("peasants", 10)
+    
+    def _initialize_traits(self):
+        """Initialize random character traits."""
+        possible_traits = {
+            "ambitious": 0.1,  # 10% chance
+            "scholarly": 0.1,
+            "charismatic": 0.1,
+            "robust": 0.1
+        }
+        
+        for trait, chance in possible_traits.items():
+            if random.random() < chance:
+                self.traits.append(trait)
     
     def is_alive(self):
         """Check if the character is alive.
@@ -78,41 +159,82 @@ class Character:
             A list of action names.
         """
         # Base actions available to all characters
-        actions = ["Find Spouse", "Socialize"]
+        actions = ["Find Spouse", "Socialize", "Family Activities"]
+        
+        # Add role-specific actions
+        if self.role == "merchant":
+            actions.extend(["Trade", "Diplomacy"])
+        elif self.role == "knight":
+            actions.extend(["Combat", "Train Skills"])
+        elif self.role == "craftsman":
+            actions.extend(["Craft", "Trade"])
+        elif self.role == "farmer":
+            actions.extend(["Farm", "Trade"])
+        elif self.role == "priest":
+            actions.extend(["Prayer", "Study"])
+        elif self.role == "noble":
+            actions.extend(["Diplomacy", "Study"])
         
         # Add health-related actions
         if self.health < 80:
             actions.append("Rest and Recover")
-        
-        # Add skill improvement actions
-        actions.append("Train Skills")
         
         # Add travel action
         actions.append("Travel")
         
         return actions
     
-    def perform_action(self, action, game_manager):
-        """Perform an action.
+    def perform_action(self, action_type: str, difficulty_modifier: int = 0):
+        """Perform an action and get its outcome.
         
         Args:
-            action: The name of the action to perform.
-            game_manager: The game manager.
+            action_type: The type of action to perform
+            difficulty_modifier: Optional modifier to success chance
+            
+        Returns:
+            The outcome message and any gained rewards, or (None, None) if action is not permitted
         """
-        if action == "Find Spouse":
-            self._find_spouse(game_manager)
-        elif action == "Socialize":
-            self._socialize(game_manager)
-        elif action == "Rest and Recover":
-            self._rest_and_recover(game_manager)
-        elif action == "Train Skills":
-            self._train_skills(game_manager)
-        elif action == "Travel":
-            self._travel(game_manager)
+        # Check historical constraints
+        allowed, reason = self.historical_constraints.can_perform_action(self, action_type)
+        if not allowed:
+            return reason, None
+        
+        # Get action outcome
+        outcome = self.outcome_manager.get_outcome(self, action_type, difficulty_modifier)
+        
+        # Apply outcome effects
+        self.wealth += outcome.rewards.get("gold", 0)
+        
+        # Apply reputation changes
+        for group, change in outcome.reputation_changes.items():
+            self.reputation.adjust_reputation(group, change)
+        
+        # Apply skill gains
+        for skill, gain in outcome.skill_gains.items():
+            self.skills[skill] = min(100, self.skills.get(skill, 0) + gain)
+        
+        # Check for social mobility opportunity
+        potential_class, chance = self.historical_constraints.calculate_social_mobility(self)
+        if random.randint(1, 100) <= chance:
+            # Character has opportunity to move up in society
+            self.last_action_result = f"{outcome.message}\n\nYour success has opened up opportunities for social advancement!"
+            # The actual class change would be handled by the game manager
         else:
-            # Role-specific actions should be handled by subclasses
-            game_manager.interface.display_message(f"Action '{action}' not implemented for {self.role}.")
-            game_manager.interface.get_input("Press Enter to continue...")
+            self.last_action_result = outcome.message
+        
+        return outcome.message, outcome.rewards
+    
+    def _trade(self):
+        """Conduct a trade."""
+        message, rewards = self.perform_action("trade")
+        self.last_action_result = message
+        return message
+    
+    def _combat(self):
+        """Engage in combat."""
+        message, rewards = self.perform_action("combat")
+        self.last_action_result = message
+        return message
     
     def _find_spouse(self, game_manager):
         """Try to find a spouse.
@@ -132,45 +254,79 @@ class Character:
             interface.get_input("Press Enter to continue...")
             return
         
-        # Generate potential spouses
+        # Get potential spouses from NPC manager
         potential_spouses = []
-        for _ in range(3):
+        if game_manager.npc_manager:
+            potential_spouses = game_manager.npc_manager.get_suitable_npcs_for_arc(
+                "marriage",
+                count=3,
+                gender="female" if self.gender == "male" else "male",
+                age_min=16,
+                age_max=min(40, self.age + 10),
+                marital_status="single"
+            )
+        
+        # If not enough NPCs, generate some random ones
+        while len(potential_spouses) < 3:
             age = random.randint(16, min(40, self.age + 10))
             birth_year = game_manager.game_year - age
             gender = "female" if self.gender == "male" else "male"
             
             # Generate a random name based on gender
             if gender == "male":
-                name = random.choice(["John", "William", "Robert", "Thomas", "Henry", "Edward"])
+                name = random.choice(["John", "William", "Robert", "Thomas", "Henry"])
             else:
-                name = random.choice(["Mary", "Elizabeth", "Catherine", "Anne", "Margaret", "Eleanor"])
+                name = random.choice(["Mary", "Elizabeth", "Catherine", "Anne", "Margaret"])
             
-            # Create a basic character
-            spouse = Character(name, gender, "commoner", birth_year)
+            # Create a basic character with an appropriate role for their gender
+            allowed_roles = self.historical_constraints.get_allowed_roles(gender)
+            role = random.choice(allowed_roles)
+            spouse = Character(name, gender, role, birth_year)
             spouse.age = age
             
-            # Adjust wealth and attributes based on role
-            spouse.wealth = random.randint(10, 100)
-            
-            potential_spouses.append(spouse)
+            potential_spouses.append((-1, spouse))
         
-        # Display potential spouses
+        # Filter potential spouses based on historical constraints
+        valid_spouses = []
+        for npc_id, spouse in potential_spouses:
+            allowed, _ = self.historical_constraints.can_marry(self, spouse)
+            if allowed:
+                valid_spouses.append((npc_id, spouse))
+        
+        if not valid_spouses:
+            interface.display_message("No suitable marriage prospects are available for someone of your social standing.")
+            interface.get_input("Press Enter to continue...")
+            return
+        
+        # Display valid potential spouses
         spouse_descriptions = []
-        for spouse in potential_spouses:
-            spouse_descriptions.append(f"{spouse.name}, {spouse.age} years old")
+        for npc_id, spouse in valid_spouses:
+            social_class = self.historical_constraints._determine_social_class(spouse)
+            if npc_id != -1 and game_manager.npc_manager:
+                description = game_manager.npc_manager.get_npc_description(npc_id)
+                spouse_descriptions.append(f"{description} ({social_class.capitalize()})")
+            else:
+                traits_str = f", Traits: {', '.join(spouse.traits)}" if spouse.traits else ""
+                spouse_descriptions.append(f"{spouse.name}, {spouse.age} years old, {spouse.role.capitalize()} ({social_class.capitalize()}){traits_str}")
         
         spouse_descriptions.append("None of these")
         
         choice = interface.display_menu("Choose a spouse:", spouse_descriptions)
         
-        if choice < len(potential_spouses):
+        if choice < len(valid_spouses):
             # Marry the chosen spouse
-            self.spouse = potential_spouses[choice]
+            _, chosen_spouse = valid_spouses[choice]
+            self.spouse = chosen_spouse
             interface.display_message(f"You are now married to {self.spouse.name}!")
             
-            # Chance for children in the future
-            if self.gender == "female" or self.spouse.gender == "female":
-                interface.display_message("You may have children in the coming years.")
+            # Update achievements
+            game_manager.achievements["married"] = True
+            
+            # Happiness boost from marriage
+            happiness_gain = random.randint(10, 20)
+            self.happiness = min(100, self.happiness + happiness_gain)
+            
+            interface.display_message(f"Your happiness increases by {happiness_gain} points.")
         else:
             interface.display_message("You decided not to marry anyone at this time.")
         
@@ -476,14 +632,151 @@ class Character:
         
         interface.get_input("\nPress Enter to continue...")
     
+    def _family_activities(self, game_manager):
+        """Spend time with family.
+        
+        Args:
+            game_manager: The game manager.
+        """
+        interface = game_manager.interface
+        
+        interface.display_message("=== Family Activities ===")
+        
+        if not self.spouse and not self.children:
+            interface.display_message("You have no family to spend time with.")
+            interface.get_input("Press Enter to continue...")
+            return
+        
+        activities = []
+        
+        if self.spouse:
+            activities.append("Spend time with spouse")
+        
+        if self.children:
+            activities.extend([
+                "Play with children",
+                "Teach children",
+                "Family meal"
+            ])
+        
+        activities.append("Cancel")
+        
+        choice = interface.display_menu("Choose an activity:", activities)
+        
+        if choice == len(activities) - 1:  # Cancel
+            return
+        
+        activity = activities[choice]
+        
+        if activity == "Spend time with spouse":
+            # Improve relationship with spouse
+            happiness_gain = random.randint(3, 8)
+            self.happiness = min(100, self.happiness + happiness_gain)
+            
+            # Random events
+            events = [
+                "You and your spouse take a pleasant walk together.",
+                "You share stories and laughter with your spouse.",
+                "You and your spouse discuss plans for the future.",
+                "You help your spouse with their daily tasks."
+            ]
+            interface.display_message(random.choice(events))
+            interface.display_message(f"Your happiness increases by {happiness_gain} points.")
+        
+        elif activity == "Play with children":
+            # Improve relationships with children
+            happiness_gain = random.randint(2, 6)
+            self.happiness = min(100, self.happiness + happiness_gain)
+            
+            # Random events
+            events = [
+                "You spend time playing games with your children.",
+                "You tell stories to your children.",
+                "You teach your children a new game.",
+                "Your children show you their latest achievements."
+            ]
+            interface.display_message(random.choice(events))
+            interface.display_message(f"Your happiness increases by {happiness_gain} points.")
+        
+        elif activity == "Teach children":
+            # Choose a skill to teach
+            teachable_skills = ["diplomacy", "trade", "stewardship"]
+            skill_names = [skill.capitalize() for skill in teachable_skills]
+            skill_names.append("Cancel")
+            
+            skill_choice = interface.display_menu("What would you like to teach?", skill_names)
+            
+            if skill_choice < len(teachable_skills):
+                skill = teachable_skills[skill_choice]
+                
+                # Teaching effectiveness based on your skill level
+                effectiveness = self.skills[skill] / 100
+                
+                # Children learn and gain skills
+                for child in self.children:
+                    if hasattr(child, 'skills') and child.age >= 5:
+                        skill_gain = random.randint(1, 3)
+                        adjusted_gain = int(skill_gain * effectiveness)
+                        if skill in child.skills:
+                            child.skills[skill] = min(100, child.skills[skill] + adjusted_gain)
+                
+                interface.display_message(f"You spend time teaching your children about {skill}.")
+                interface.display_message("They seem to learn from your experience.")
+        
+        elif activity == "Family meal":
+            # Everyone gains happiness
+            happiness_gain = random.randint(2, 5)
+            self.happiness = min(100, self.happiness + happiness_gain)
+            
+            # Cost of the meal
+            meal_cost = random.randint(5, 15)
+            self.wealth = max(0, self.wealth - meal_cost)
+            
+            interface.display_message(f"You share a wonderful meal with your family. (Cost: {meal_cost} coins)")
+            interface.display_message(f"Your happiness increases by {happiness_gain} points.")
+        
+        interface.get_input("Press Enter to continue...")
+    
     def display_status(self, interface):
         """Display the character's status.
         
         Args:
             interface: The user interface.
         """
-        # This will be overridden by subclasses to display role-specific status
-        pass
+        # Display basic info
+        interface.display_message(f"Health: {self.health}/100")
+        interface.display_message(f"Wealth: {self.wealth} coins")
+        interface.display_message(f"Happiness: {self.happiness}/100")
+        
+        # Display traits
+        if self.traits:
+            interface.display_message("\nTraits:")
+            for trait in self.traits:
+                interface.display_message(f"- {trait.capitalize()}")
+        
+        # Display reputation levels
+        interface.display_message("\nReputation Levels:")
+        for group in ["nobility", "clergy", "merchants", "peasants", "military"]:
+            level, desc = self.reputation.get_reputation_level(group)
+            interface.display_message(f"{group.capitalize()}: {level}")
+        
+        # Only show criminal reputation if it's above 0
+        if self.reputation.reputations["criminals"] > 0:
+            level, desc = self.reputation.get_reputation_level("criminals")
+            interface.display_message(f"Criminal: {level}")
+        
+        # Display active effects
+        significant_effects = []
+        for group in self.reputation.reputations:
+            effects = self.reputation.get_reputation_effects(group)
+            for effect, value in effects.items():
+                if abs(1 - value) >= 0.1:  # Only show significant effects (>= 10% change)
+                    significant_effects.append(f"{group.capitalize()} - {effect}: {value:.2f}x")
+        
+        if significant_effects:
+            interface.display_message("\nActive Effects:")
+            for effect in significant_effects:
+                interface.display_message(effect)
     
     def display_details(self, interface):
         """Display detailed character information.
@@ -505,6 +798,36 @@ class Character:
         interface.display_message("\nSkills:")
         for skill, value in self.skills.items():
             interface.display_message(f"  {skill.capitalize()}: {value}")
+
+    def _diplomacy(self):
+        """Engage in diplomatic activities."""
+        message, rewards = self.perform_action("diplomacy")
+        self.last_action_result = message
+        return message
+
+    def _craft(self):
+        """Perform crafting work."""
+        message, rewards = self.perform_action("craft")
+        self.last_action_result = message
+        return message
+
+    def _study(self):
+        """Study to gain knowledge."""
+        message, rewards = self.perform_action("study")
+        self.last_action_result = message
+        return message
+
+    def _farm(self):
+        """Work on farming activities."""
+        message, rewards = self.perform_action("farm")
+        self.last_action_result = message
+        return message
+
+    def _prayer(self):
+        """Engage in religious activities."""
+        message, rewards = self.perform_action("prayer")
+        self.last_action_result = message
+        return message
 
 class Relationship:
     """Represents a relationship between two characters."""

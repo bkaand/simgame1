@@ -20,6 +20,9 @@ class GUIInterface:
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption("Medieval Life Simulator")
         
+        # Game manager reference (will be set later)
+        self.game_manager = None
+        
         # Colors - define these first so they can be used by other initialization code
         self.BLACK = (0, 0, 0)
         self.WHITE = (255, 255, 255)
@@ -783,84 +786,42 @@ class GUIInterface:
         """Display the game start screen.
         
         Returns:
-            True if the player wants to start a new game, False to quit.
+            bool: True if the user chose to start/load a game, False if they chose to quit.
         """
-        # Clear screen
-        self.clear_screen()
+        # Clear screen and draw background
+        self.screen.blit(self.background, (0, 0))
         
-        # Draw background
-        bg_rect = pygame.Rect(0, 0, self.width, self.height)
-        pygame.draw.rect(self.screen, self.PARCHMENT, bg_rect)
+        # Title
+        title_surface = pygame.Surface((600, 100))
+        title_surface.fill(self.ROYAL_BLUE)
+        title_rect = title_surface.get_rect(center=(self.width // 2, 100))
+        pygame.draw.rect(self.screen, self.ROYAL_BLUE, title_rect, 0, 15)
+        pygame.draw.rect(self.screen, self.GOLD_HIGHLIGHT, title_rect, 3, 15)
+        self.font_title.render_to(self.screen, (self.width // 2 - 250, 80), "Medieval Life Simulator", self.WHITE)
         
-        # Draw decorative border
-        border_width = 20
-        pygame.draw.rect(self.screen, self.WOOD_BROWN, bg_rect, border_width)
-        
-        # Draw corner decorations
-        corner_size = 50
-        for corner in [(0, 0), (self.width - corner_size, 0), 
-                       (0, self.height - corner_size), 
-                       (self.width - corner_size, self.height - corner_size)]:
-            pygame.draw.rect(self.screen, self.DARK_BROWN, 
-                            (corner[0], corner[1], corner_size, corner_size))
-            pygame.draw.rect(self.screen, self.GOLD_HIGHLIGHT, 
-                            (corner[0], corner[1], corner_size, corner_size), 3)
-        
-        # Draw title with decorative background
-        title_rect = pygame.Rect(self.width // 2 - 400, 80, 800, 120)
-        pygame.draw.rect(self.screen, self.ROYAL_BLUE, title_rect)
-        pygame.draw.rect(self.screen, self.GOLD_HIGHLIGHT, title_rect, 4)
-        
-        # Add title shadow for depth
-        self.font_title.render_to(self.screen, (self.width // 2 - 297, 133), "MEDIEVAL LIFE SIMULATOR", self.BLACK)
-        self.font_title.render_to(self.screen, (self.width // 2 - 300, 130), "MEDIEVAL LIFE SIMULATOR", self.GOLD_HIGHLIGHT)
-        
-        # Draw description with improved styling
-        desc_rect = pygame.Rect(self.width // 2 - 350, 250, 700, 200)
-        pygame.draw.rect(self.screen, self.ROYAL_PURPLE, desc_rect, 0, 10)  # Rounded corners
-        pygame.draw.rect(self.screen, self.GOLD_HIGHLIGHT, desc_rect, 3, 10)
-        
-        # Add scroll-like decorations to description box
-        scroll_end_height = 40
-        scroll_end_width = 700
-        
-        # Top scroll end
-        pygame.draw.ellipse(self.screen, self.ROYAL_PURPLE, 
-                           (desc_rect.left, desc_rect.top - scroll_end_height//2, 
-                            scroll_end_width, scroll_end_height))
-        pygame.draw.ellipse(self.screen, self.GOLD_HIGHLIGHT, 
-                           (desc_rect.left, desc_rect.top - scroll_end_height//2, 
-                            scroll_end_width, scroll_end_height), 3)
-        
-        # Bottom scroll end
-        pygame.draw.ellipse(self.screen, self.ROYAL_PURPLE, 
-                           (desc_rect.left, desc_rect.bottom - scroll_end_height//2, 
-                            scroll_end_width, scroll_end_height))
-        pygame.draw.ellipse(self.screen, self.GOLD_HIGHLIGHT, 
-                           (desc_rect.left, desc_rect.bottom - scroll_end_height//2, 
-                            scroll_end_width, scroll_end_height), 3)
-        
-        # Description text with improved positioning
-        self.font_medium.render_to(self.screen, (self.width // 2 - 300, 270), "Welcome to Medieval Life Simulator!", self.WHITE)
-        self.font_medium.render_to(self.screen, (self.width // 2 - 300, 310), "Live your life in medieval times as a king, farmer,", self.WHITE)
-        self.font_medium.render_to(self.screen, (self.width // 2 - 300, 350), "noble, knight, or more!", self.WHITE)
-        self.font_medium.render_to(self.screen, (self.width // 2 - 300, 390), "Build a dynasty and leave a legacy!", self.WHITE)
-        
-        # Draw buttons with improved styling
+        # Button dimensions
         button_width = 300
         button_height = 60
+        button_spacing = 100
+        start_y = 400
         
-        # Start button
-        start_button = pygame.Rect(self.width // 2 - button_width//2, 500, button_width, button_height)
-        pygame.draw.rect(self.screen, self.ROYAL_BLUE, start_button, 0, 15)  # Rounded corners
-        pygame.draw.rect(self.screen, self.GOLD_HIGHLIGHT, start_button, 3, 15)
-        self.font_large.render_to(self.screen, (self.width // 2 - 100, 515), "Start Game", self.WHITE)
+        # New Game button
+        new_game_button = pygame.Rect(self.width // 2 - button_width//2, start_y, button_width, button_height)
+        pygame.draw.rect(self.screen, self.ROYAL_BLUE, new_game_button, 0, 15)
+        pygame.draw.rect(self.screen, self.GOLD_HIGHLIGHT, new_game_button, 3, 15)
+        self.font_large.render_to(self.screen, (self.width // 2 - 100, start_y + 15), "New Game", self.WHITE)
+        
+        # Load Game button
+        load_game_button = pygame.Rect(self.width // 2 - button_width//2, start_y + button_spacing, button_width, button_height)
+        pygame.draw.rect(self.screen, self.ROYAL_BLUE, load_game_button, 0, 15)
+        pygame.draw.rect(self.screen, self.GOLD_HIGHLIGHT, load_game_button, 3, 15)
+        self.font_large.render_to(self.screen, (self.width // 2 - 100, start_y + button_spacing + 15), "Load Game", self.WHITE)
         
         # Quit button
-        quit_button = pygame.Rect(self.width // 2 - button_width//2, 600, button_width, button_height)
-        pygame.draw.rect(self.screen, self.DARK_RED, quit_button, 0, 15)  # Rounded corners
+        quit_button = pygame.Rect(self.width // 2 - button_width//2, start_y + button_spacing * 2, button_width, button_height)
+        pygame.draw.rect(self.screen, self.DARK_RED, quit_button, 0, 15)
         pygame.draw.rect(self.screen, self.GOLD_HIGHLIGHT, quit_button, 3, 15)
-        self.font_large.render_to(self.screen, (self.width // 2 - 50, 615), "Quit", self.WHITE)
+        self.font_large.render_to(self.screen, (self.width // 2 - 50, start_y + button_spacing * 2 + 15), "Quit", self.WHITE)
         
         # Update display
         pygame.display.flip()
@@ -874,9 +835,20 @@ class GUIInterface:
                     self.running = False
                     waiting = False
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    if start_button.collidepoint(event.pos):
+                    if new_game_button.collidepoint(event.pos):
                         start_game = True
                         waiting = False
+                    elif load_game_button.collidepoint(event.pos):
+                        # Show load game menu
+                        save_files = self.game_manager.save_system.get_save_files()
+                        if save_files:
+                            save_idx = self.display_menu("Choose a save file to load:", save_files + ["Cancel"])
+                            if save_idx < len(save_files):  # Not Cancel
+                                if self.game_manager.load_game(save_files[save_idx]):
+                                    start_game = True
+                                    waiting = False
+                        else:
+                            self.display_event("Load Game", "No save files found.")
                     elif quit_button.collidepoint(event.pos):
                         start_game = False
                         waiting = False

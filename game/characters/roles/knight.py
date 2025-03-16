@@ -18,14 +18,16 @@ class Knight(Character):
         super().__init__(name, gender, "knight", birth_year)
         
         # Knights start with moderate wealth
-        self.wealth = random.randint(100, 500)
+        self.wealth = random.randint(200, 400)
         
         # Knight-specific properties
         self.lord = None  # The knight's lord (if any)
         self.reputation = random.randint(30, 70)  # Reputation among peers (0-100)
         self.tournament_wins = 0  # Number of tournament wins
         self.tournament_losses = 0  # Number of tournament losses
-        self.equipment_quality = random.randint(30, 70)  # Quality of armor and weapons (0-100)
+        self.equipment_level = 1
+        self.squires = 0
+        self.last_battle_result = None
         
         # Adjust skills for role
         self._adjust_skills_for_role()
@@ -33,7 +35,7 @@ class Knight(Character):
     def _adjust_skills_for_role(self):
         """Adjust skills based on character role."""
         # Knights are better at combat
-        self.skills["combat"] += random.randint(20, 40)
+        self.skills["combat"] = random.randint(40, 60)
         
         # Knights also have some diplomacy skills
         self.skills["diplomacy"] += random.randint(5, 15)
@@ -52,11 +54,7 @@ class Knight(Character):
         actions = super().get_actions()
         
         # Add knight-specific actions
-        knight_actions = ["Train Combat"]
-        
-        # Add conditional actions
-        if self.wealth >= 50:
-            knight_actions.append("Participate in Tournament")
+        knight_actions = ["Train Squire", "Upgrade Equipment", "Participate in Tournament"]
         
         if self.lord is None:
             knight_actions.append("Seek Lord to Serve")
@@ -76,10 +74,12 @@ class Knight(Character):
             action: The name of the action to perform.
             game_manager: The game manager.
         """
-        if action == "Train Combat":
-            self._train_combat(game_manager)
+        if action == "Train Squire":
+            self._train_squire(game_manager)
+        elif action == "Upgrade Equipment":
+            self._upgrade_equipment(game_manager)
         elif action == "Participate in Tournament":
-            self._participate_in_tournament(game_manager)
+            self._enter_tournament(game_manager)
         elif action == "Seek Lord to Serve":
             self._seek_lord(game_manager)
         elif action == "Serve Lord":
@@ -90,8 +90,102 @@ class Knight(Character):
             # Use base class implementation for common actions
             super().perform_action(action, game_manager)
     
-    def _train_combat(self, game_manager):
-        """Train to improve combat skills.
+    def _train_squire(self, game_manager):
+        """Train a squire with reputation effects."""
+        base_cost = 75 * (self.squires + 1)
+        
+        # Reputation affects training costs and effectiveness
+        noble_mod = self.reputation.get_reputation_effects("nobility").get("training_discount", 1.0)
+        military_mod = self.reputation.get_reputation_effects("military").get("training_effectiveness", 1.0)
+        
+        cost = int(base_cost * noble_mod)
+        
+        if self.wealth >= cost:
+            self.wealth -= cost
+            self.squires += 1
+            
+            # Training effectiveness affects skill gain
+            skill_gain = int(random.randint(2, 5) * military_mod)
+            self.skills["combat"] = min(100, self.skills["combat"] + skill_gain)
+            
+            # Improve reputation
+            self.reputation.adjust_reputation("nobility", 2)
+            self.reputation.adjust_reputation("military", 2)
+            
+            return f"Trained new squire for {cost} coins. Combat skill increased by {skill_gain}."
+        return "Not enough money to train a squire."
+    
+    def _upgrade_equipment(self, game_manager):
+        """Upgrade equipment with reputation effects."""
+        base_cost = 250 * self.equipment_level
+        
+        # Reputation affects equipment costs and quality
+        merchant_mod = self.reputation.get_reputation_effects("merchants").get("equipment_discount", 1.0)
+        military_mod = self.reputation.get_reputation_effects("military").get("equipment_quality", 1.0)
+        
+        cost = int(base_cost * merchant_mod)
+        
+        if self.wealth >= cost:
+            self.wealth -= cost
+            self.equipment_level += 1
+            
+            # Equipment quality affects skill gain
+            skill_gain = int(random.randint(3, 7) * military_mod)
+            self.skills["combat"] = min(100, self.skills["combat"] + skill_gain)
+            
+            # Improve reputation
+            self.reputation.adjust_reputation("military", 3)
+            self.reputation.adjust_reputation("nobility", 2)
+            
+            return f"Equipment upgraded to level {self.equipment_level}! Combat skill increased by {skill_gain}."
+        return "Not enough money to upgrade equipment."
+    
+    def _enter_tournament(self, game_manager):
+        """Enter a tournament with reputation effects."""
+        entry_fee = 100
+        
+        if self.wealth >= entry_fee:
+            self.wealth -= entry_fee
+            
+            # Calculate success chance based on skills and reputation
+            base_chance = 0.3 + (self.skills["combat"] / 200)  # 30-80% base chance
+            equipment_bonus = (self.equipment_level - 1) * 0.05  # 5% per equipment level
+            squire_bonus = self.squires * 0.03  # 3% per squire
+            
+            # Reputation affects tournament performance
+            noble_mod = self.reputation.get_reputation_effects("nobility").get("tournament_bonus", 1.0)
+            military_mod = self.reputation.get_reputation_effects("military").get("combat_bonus", 1.0)
+            
+            success_chance = min(0.95, (base_chance + equipment_bonus + squire_bonus) * 
+                               ((noble_mod + military_mod) / 2))
+            
+            if random.random() < success_chance:
+                # Tournament victory
+                prize_money = random.randint(200, 400)
+                self.wealth += prize_money
+                self.tournament_wins += 1
+                
+                # Significant reputation gains
+                self.reputation.adjust_reputation("nobility", random.randint(3, 5))
+                self.reputation.adjust_reputation("military", random.randint(3, 5))
+                
+                # Skill improvement
+                skill_gain = random.randint(2, 4)
+                self.skills["combat"] = min(100, self.skills["combat"] + skill_gain)
+                
+                self.last_battle_result = f"Victory! Won tournament and {prize_money} coins."
+                return True
+            else:
+                # Tournament loss
+                self.reputation.adjust_reputation("nobility", -1)
+                self.last_battle_result = "Lost in tournament."
+                return False
+        else:
+            self.last_battle_result = "Cannot afford tournament entry fee."
+            return False
+    
+    def _seek_lord(self, game_manager):
+        """Seek a lord to serve.
         
         Args:
             game_manager: The game manager.
