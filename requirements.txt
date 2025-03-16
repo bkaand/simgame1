@@ -1,0 +1,7 @@
+# Required dependencies
+pygame==2.1.2
+
+# No external dependencies required for the base game
+# Future versions may include:
+# numpy==1.22.3  # For more complex calculations
+# tensorflow==2.8.0  # For AI integration 
